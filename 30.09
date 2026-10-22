@@ -1,0 +1,56 @@
+using Microsoft.Data.SqlClient;
+// 3
+string connectionString =
+    "Server=localhost;Database=CoffeeShop;Trusted_Connection=True;TrustServerCertificate=True;";
+
+// 4
+using var connection = new SqlConnection(connectionString);
+connection.Open();
+Console.WriteLine("Соединение с базой данных установлено.");
+Console.WriteLine(); 
+
+static object? Scalar(SqlConnection conn, string sql)
+{
+    using var cmd = new SqlCommand(sql, conn);
+    return cmd.ExecuteScalar();
+}
+
+// 5
+var databaseName = Scalar(connection, "SELECT DB_NAME();");
+Console.WriteLine($"Текущая база данных: {databaseName}");
+
+// 6
+var serverName = Scalar(connection, "SELECT @@SERVERNAME;");
+Console.WriteLine($"SQL Server: {serverName}");
+
+// 7
+var serverDate = Scalar(connection, "SELECT GETDATE();");
+Console.WriteLine($"Дата и время сервера: {serverDate}");
+
+Console.WriteLine();
+
+// 8
+var productCount = Scalar(connection, "SELECT COUNT(*) FROM Products;");
+Console.WriteLine($"Количество товаров: {productCount}");
+
+// 9
+var maxPrice = Scalar(connection, "SELECT MAX(price) FROM Products;");
+Console.WriteLine($"Максимальная цена товара: {maxPrice}");
+
+Console.WriteLine();
+
+Console.WriteLine(" Информация о базе данных ");
+Console.WriteLine();
+
+var dbName2    = Scalar(connection, "SELECT DB_NAME();");
+var srvName2   = Scalar(connection, "SELECT @@SERVERNAME;");
+var count2     = Scalar(connection, "SELECT COUNT(*) FROM Products;");
+var minPrice2  = Scalar(connection, "SELECT MIN(price) FROM Products;");
+var maxPrice2  = Scalar(connection, "SELECT MAX(price) FROM Products;");
+
+Console.WriteLine($"База данных: {dbName2}");
+Console.WriteLine($"SQL Server: {srvName2}");
+Console.WriteLine();
+Console.WriteLine($"Количество товаров: {count2}");
+Console.WriteLine($"Минимальная цена: {minPrice2}");
+Console.WriteLine($"Максимальная цена: {maxPrice2}");
