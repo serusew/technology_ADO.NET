@@ -1,0 +1,211 @@
+using Microsoft.Data.SqlClient;
+using System.Data;
+string connectionString =
+    "Server=localhost;Database=coffee_shop;Trusted_Connection=True;TrustServerCertificate=True;";
+
+using var connection = new SqlConnection(connectionString);
+connection.Open();
+Console.WriteLine("Подключение установлено.");
+
+while (true)
+{
+    Console.WriteLine();
+    Console.WriteLine(" УПРАВЛЕНИЕ ТОВАРАМИ ");
+    Console.WriteLine("1. Найти товар по ID");
+    Console.WriteLine("2. Найти товар по названию");
+    Console.WriteLine("3. Добавить товар");
+    Console.WriteLine("4. Изменить цену");
+    Console.WriteLine("5. Удалить товар");
+    Console.WriteLine("6. Найти товары дороже указанной цены");
+    Console.WriteLine("7. Поиск клиентов по имени (доп.)");
+    Console.WriteLine("0. Выход");
+    Console.Write("Выберите операцию: ");
+
+    string? choice = Console.ReadLine();
+
+    try
+    {
+        switch (choice)
+        {
+            case "1": FindProductById(); break;
+            case "2": FindProductByName(); break;
+            case "3": AddProduct(); break;
+            case "4": UpdatePrice(); break;
+            case "5": DeleteProduct(); break;
+            case "6": FindByMinPrice(); break;
+            case "7": FindCustomers(); break;
+            case "0":
+                Console.WriteLine("Выход из программы.");
+                return;
+            default:
+                Console.WriteLine("Неизвестная операция. Попробуйте снова.");
+                break;
+        }
+    }
+    catch (SqlException ex)
+    {
+        Console.WriteLine($"Ошибка SQL: {ex.Message}");
+    }
+    catch (FormatException)
+    {
+        Console.WriteLine("Некорректный ввод числа. Попробуйте снова.");
+    }
+    catch (OverflowException)
+    {
+        Console.WriteLine("Число слишком большое. Попробуйте снова.");
+    }
+}
+
+// 2.
+void FindProductById()
+{
+    Console.Write("Введите ID товара: ");
+    int productId = Convert.ToInt32(Console.ReadLine());
+
+    string sql = @"
+        SELECT id, name, price
+        FROM products
+        WHERE id = @id;";
+
+    using var command = new SqlCommand(sql, connection);
+    command.Parameters.AddWithValue("@id", productId);
+
+    using var reader = command.ExecuteReader();
+    if (!reader.HasRows)
+    {
+        Console.WriteLine("Товар не найден.");
+        return;
+    }
+
+    while (reader.Read())
+    {
+        Console.WriteLine($"{reader["id"]}: {reader["name"]} - {reader["price"]} руб.");
+    }
+}
+
+// 3. 
+void FindProductByName()
+{
+    Console.Write("Введите название товара: ");
+    string name = Console.ReadLine()!;
+
+    string sql = @"
+        SELECT id, name, price
+        FROM products
+        WHERE name = @name;";
+
+    using var command = new SqlCommand(sql, connection);
+    command.Parameters.AddWithValue("@name", name);
+
+    using var reader = command.ExecuteReader();
+    if (!reader.HasRows)
+    {
+        Console.WriteLine("Товар не найден.");
+        return;
+    }
+
+    while (reader.Read())
+    {
+        Console.WriteLine($"{reader["id"]}: {reader["name"]} - {reader["price"]} руб.");
+    }
+}
+
+// 4. 
+void AddProduct()
+{
+    Console.Write("Название товара: ");
+    string name = Console.ReadLine()!;
+    Console.Write("ID категории: ");
+    int categoryId = Convert.ToInt32(Console.ReadLine());
+    Console.Write("Цена: ");
+    decimal price = Convert.ToDecimal(Console.ReadLine());
+
+    string sql = @"
+        INSERT INTO products (name, category_id, price)
+        VALUES (@name, @category_id, @price);";
+
+    using var command = new SqlCommand(sql, connection);
+
+    command.Parameters.Add("@name", SqlDbType.NVarChar, 150).Value = name;
+    command.Parameters.Add("@category_id", SqlDbType.Int).Value = categoryId;
+    command.Parameters.Add("@price", SqlDbType.Decimal).Value = price;
+
+    int rowsAffected = command.ExecuteNonQuery();
+    Console.WriteLine($"Добавлено строк: {rowsAffected}");
+}
+
+// 5.
+void UpdatePrice()
+{
+    Console.Write("ID товара: ");
+    int productId = Convert.ToInt32(Console.ReadLine());
+    Console.Write("Новая цена: ");
+    decimal price = Convert.ToDecimal(Console.ReadLine());
+
+    string sql = "UPDATE products SET price = @price WHERE id = @id;";
+
+    using var command = new SqlCommand(sql, connection);
+    command.Parameters.AddWithValue("@price", price);
+    command.Parameters.AddWithValue("@id", productId);
+
+    int rowsAffected = command.ExecuteNonQuery();
+    Console.WriteLine($"Изменено строк: {rowsAffected}");
+}
+
+// 6.
+void DeleteProduct()
+{
+    Console.Write("ID товара для удаления: ");
+    int productId = Convert.ToInt32(Console.ReadLine());
+
+    string sql = "DELETE FROM products WHERE id = @id;";
+
+    using var command = new SqlCommand(sql, connection);
+    command.Parameters.AddWithValue("@id", productId);
+
+    int rowsAffected = command.ExecuteNonQuery();
+    Console.WriteLine($"Удалено строк: {rowsAffected}");
+}
+
+// 7. 
+void FindByMinPrice()
+{
+    Console.Write("Введите минимальную цену: ");
+    decimal minPrice = Convert.ToDecimal(Console.ReadLine());
+
+    string sql = "SELECT COUNT(*) FROM products WHERE price >= @min_price;";
+
+    using var command = new SqlCommand(sql, connection);
+    command.Parameters.AddWithValue("@min_price", minPrice);
+
+    int count = Convert.ToInt32(command.ExecuteScalar());
+    Console.WriteLine($"Товаров с ценой от {minPrice}: {count}");
+}
+
+// 8.
+void FindCustomers()
+{
+    Console.Write("Введите имя или фамилию: ");
+    string search = Console.ReadLine()!;
+
+    string sql = @"
+        SELECT id, full_name, phone, email
+        FROM customers
+        WHERE full_name LIKE @search;";
+
+    using var command = new SqlCommand(sql, connection);
+    command.Parameters.AddWithValue("@search", $"%{search}%");
+
+    using var reader = command.ExecuteReader();
+    if (!reader.HasRows)
+    {
+        Console.WriteLine("Клиенты не найдены.");
+        return;
+    }
+
+    while (reader.Read())
+    {
+        Console.WriteLine(
+            $"{reader["id"]}: {reader["full_name"]} | {reader["phone"]} | {reader["email"]}");
+    }
+}
