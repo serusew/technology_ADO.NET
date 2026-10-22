@@ -1,0 +1,34 @@
+using Microsoft.Data.SqlClient;
+
+class Program
+{
+    static async Task Main()
+    {
+        string connectionString =
+            "Server=localhost;Database=coffee_shop;Trusted_Connection=True;TrustServerCertificate=True;";
+
+        try
+        {
+            int count = await GetAvailableProductCountAsync(connectionString);
+            Console.WriteLine($"Доступных товаров: {count}");
+        }
+        catch (SqlException ex)
+        {
+            Console.WriteLine($"Ошибка SQL Server: {ex.Message}");
+        }
+    }
+
+    static async Task<int> GetAvailableProductCountAsync(string connectionString)
+    {
+        await using SqlConnection connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+
+        using SqlCommand command = new SqlCommand(
+            "SELECT COUNT(*) FROM products WHERE is_available = 1", connection);
+
+        return (int)(await command.ExecuteScalarAsync());
+    }
+}
+
+
+
