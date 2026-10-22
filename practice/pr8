@@ -1,0 +1,184 @@
+using System;
+using System.Data;
+using System.Linq;
+using Microsoft.Data.SqlClient;
+
+string connectionString =
+    "Server=localhost;Database=coffee_shop;Trusted_Connection=True;TrustServerCertificate=True;";
+
+var dataSet = new DataSet("coffee_shop");
+DataTable products = new DataTable("products");
+DataTable categories = new DataTable("categories");
+
+void LoadData()
+{
+    dataSet.Clear();
+    using SqlConnection conn = new SqlConnection(connectionString);
+    using SqlDataAdapter pa = new SqlDataAdapter(
+        "SELECT id, name, category_id, price, is_available FROM products", conn);
+    using SqlDataAdapter ca = new SqlDataAdapter(
+        "SELECT id, name FROM categories", conn);
+    pa.Fill(dataSet, "products");
+    ca.Fill(dataSet, "categories");
+
+    products = dataSet.Tables["products"]!;
+    categories = dataSet.Tables["categories"]!;
+
+    if (!dataSet.Relations.Contains("category_products"))
+        dataSet.Relations.Add("category_products",
+            categories.Columns["id"]!,
+            products.Columns["category_id"]!);
+
+    Console.WriteLine($"Загружено: товаров {products.Rows.Count}, категорий {categories.Rows.Count}");
+}
+
+void ShowAll()
+{
+    if (products.Rows.Count == 0) { Console.WriteLine("Нет данных."); return; }
+    foreach (DataRow r in products.Rows)
+        Console.WriteLine($"{r["id"]}. {r["name"]} – {r["price"]} руб. | " +
+                          (((bool)r["is_available"]) ? "Доступен" : "Недоступен"));
+}
+
+void ShowAvailable()
+{
+    var rows = products.Select("is_available = true", "price ASC");
+    if (rows.Length == 0) { Console.WriteLine("Нет доступных товаров."); return; }
+    foreach (var r in rows) Console.WriteLine($"{r["name"]} – {r["price"]} руб.");
+}
+
+void ShowSorted()
+{
+    var rows = products.Select("", "price ASC");
+    if (rows.Length == 0) { Console.WriteLine("Нет данных."); return; }
+    foreach (var r in rows) Console.WriteLine($"{r["name"]} – {r["price"]} руб.");
+}
+
+void ShowByCategory()
+{
+    if (categories.Rows.Count == 0) { Console.WriteLine("Нет категорий."); return; }
+    for (int i = 0; i < categories.Rows.Count; i++)
+        Console.WriteLine($"{i + 1}. {categories.Rows[i]["name"]}");
+
+    Console.Write("Выберите номер категории: ");
+    if (!int.TryParse(Console.ReadLine(), out int idx) ||
+        idx < 1 || idx > categories.Rows.Count)
+    { Console.WriteLine("Некорректный ввод."); return; }
+
+    DataRow cat = categories.Rows[idx - 1];
+    var children = cat.GetChildRows("category_products");
+    if (children.Length == 0) { Console.WriteLine("В категории нет товаров."); return; }
+
+    Console.WriteLine($"Категория: {cat["name"]}");
+    foreach (var p in children)
+        Console.WriteLine($" - {p["name"]} – {p["price"]} руб.");
+}
+
+void EditPrice()
+{
+    if (products.Rows.Count == 0) { Console.WriteLine("Нет данных."); return; }
+    ShowAll();
+    Console.Write("Введите id товара: ");
+    if (!int.TryParse(Console.ReadLine(), out int id))
+    { Console.WriteLine("Некорректный ввод."); return; }
+
+    DataRow? row = products.PrimaryKey.Length > 0
+        ? products.Rows.Find(id)
+        : products.Select($"id = {id}").FirstOrDefault();
+    if (row == null) { Console.WriteLine("Товар не найден."); return; }
+
+    Console.Write($"Новая цена (было {row["price"]}): ");
+    if (!decimal.TryParse(Console.ReadLine(), out decimal newPrice) || newPrice < 0)
+    { Console.WriteLine("Некорректная цена."); return; }
+
+    row["price"] = newPrice;
+    Console.WriteLine($"Локально: {row["price"]} руб., RowState = {row.RowState}");
+}
+
+void ReloadAndCompare()
+{
+    if (products.Rows.Count == 0) { Console.WriteLine("Нет данных."); return; }
+    var modified = products.GetChanges(DataRowState.Modified);
+    if (modified == null) { Console.WriteLine("Локальных изменений нет."); return; }
+
+    foreach (DataRow local in modified.Rows)
+    {
+        int id = (int)local["id"];
+        decimal localPrice = (decimal)local["price"];
+
+        using SqlConnection conn = new SqlConnection(connectionString);
+        conn.Open();
+        using var cmd = new SqlCommand("SELECT price FROM products WHERE id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", id);
+        object? dbVal = cmd.ExecuteScalar();
+
+        if (dbVal == null) { Console.WriteLine($"Товар {id} не найден в БД."); continue; }
+
+        decimal dbPrice = (decimal)dbVal;
+        Console.WriteLine($"Товар {local["name"]}: локально {localPrice}, в БД {dbPrice} — " +
+                          (localPrice == dbPrice ? "совпадает" : "различается (в БД не записано)"));
+    }
+}
+
+void ShowCountByCategory()
+{
+    if (categories.Rows.Count == 0) { Console.WriteLine("Нет категорий."); return; }
+
+    var stats = categories.Rows.Cast<DataRow>()
+        .Select(c => new
+        {
+            Name = (string)c["name"],
+            Count = c.GetChildRows("category_products").Length
+        })
+        .OrderByDescending(x => x.Count);
+
+    foreach (var s in stats)
+        Console.WriteLine($"{s.Name}: {s.Count} товар(ов)");
+}
+
+bool loaded = false;
+while (true)
+{
+    Console.WriteLine("""
+        1. Загрузить данные
+        2. Показать все товары
+        3. Показать доступные товары
+        4. Сортировать по цене
+        5. Товары выбранной категории
+        6. Изменить цену в памяти
+        7. Сравнить локальную и БД-цену
+        8. Количество товаров по категориям
+        0. Выход
+        """);
+    Console.Write("Выбор: ");
+    if (!int.TryParse(Console.ReadLine(), out int choice))
+    { Console.WriteLine("Некорректный ввод."); continue; }
+
+    if (choice == 0) break;
+    if (!loaded && choice != 1)
+    { Console.WriteLine("Сначала загрузите данные (п.1)."); continue; }
+
+    try
+    {
+        switch (choice)
+        {
+            case 1: LoadData(); loaded = true; break;
+            case 2: ShowAll(); break;
+            case 3: ShowAvailable(); break;
+            case 4: ShowSorted(); break;
+            case 5: ShowByCategory(); break;
+            case 6: EditPrice(); break;
+            case 7: ReloadAndCompare(); break;
+            case 8: ShowCountByCategory(); break;
+            default: Console.WriteLine("Нет такого пункта."); break;
+        }
+    }
+    catch (SqlException ex)
+    {
+        Console.WriteLine($"Ошибка SQL: {ex.Message}");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Ошибка: {ex.Message}");
+    }
+}
