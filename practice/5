@@ -1,0 +1,391 @@
+using System;
+using Microsoft.Data.SqlClient;
+
+namespace CoffeeShopTransactions
+{
+    internal class Program
+    {
+        private const string ConnectionString =
+            "Server=localhost;Database=coffee_shop;Trusted_Connection=True;TrustServerCertificate=True;";
+
+        private static void Main()
+        {
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+
+            while (true)
+            {
+                Console.WriteLine();
+                Console.WriteLine("1. Часть 2");
+                Console.WriteLine("2. Часть 3");
+                Console.WriteLine("3. Часть 4");
+                Console.WriteLine("4. Часть 5-6");
+                Console.WriteLine("5. Часть 7");
+                Console.WriteLine("6. Часть 8");
+                Console.WriteLine("7.");
+                Console.Write("Выбор: ");
+
+                var choice = Console.ReadLine();
+                Console.WriteLine();
+
+                try
+                {
+                    switch (choice)
+                    {
+                        case "1": Part2_SimpleTransaction(); break;
+                        case "2": Part3_RollbackTest(); break;
+                        case "3": Part4_ShowData(); break;
+                        case "4": Part5_6_CreateOrder(); break;
+                        case "5": Part7_ShowOrders(); break;
+                        case "6": Part8_CreateOrderWithTwoItems(); break;
+                        case "7": Extra_CancelOrder(); break;
+                        case "0": return;
+                        default: Console.WriteLine("Неизвестный пункт меню."); break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ОШИБКА] {ex.Message}");
+                }
+            }
+        }
+
+// 2
+        private static void Part2_SimpleTransaction()
+        {
+            Console.Write("ID первого товара: ");
+            int id1 = int.Parse(Console.ReadLine()!);
+            Console.Write("Новая цена первого товара: ");
+            decimal price1 = decimal.Parse(Console.ReadLine()!);
+            Console.Write("ID второго товара: ");
+            int id2 = int.Parse(Console.ReadLine()!);
+            Console.Write("Новая цена второго товара: ");
+            decimal price2 = decimal.Parse(Console.ReadLine()!);
+
+            using var connection = new SqlConnection(ConnectionString);
+            connection.Open();
+            using var transaction = connection.BeginTransaction();
+
+            try
+            {
+                UpdateProductPrice(connection, transaction, id1, price1);
+                UpdateProductPrice(connection, transaction, id2, price2);
+
+                transaction.Commit();
+                Console.WriteLine("Цены успешно обновлены (Commit).");
+            }
+            catch (Exception ex)
+            {
+                SafeRollback(transaction);
+                Console.WriteLine($"Откат транзакции: {ex.Message}");
+            }
+        }
+
+        private static void UpdateProductPrice(
+            SqlConnection connection, SqlTransaction transaction, int id, decimal price)
+        {
+            using var cmd = new SqlCommand(
+                "UPDATE products SET price = @price WHERE id = @id;", connection, transaction);
+            cmd.Parameters.AddWithValue("@price", price);
+            cmd.Parameters.AddWithValue("@id", id);
+
+            int rows = cmd.ExecuteNonQuery();
+            if (rows != 1)
+                throw new InvalidOperationException(
+                    $"Товар с id={id} не найден (затронуто строк: {rows}).");
+        }
+
+// 3
+        private static void Part3_RollbackTest()
+        {
+            Console.Write("ID товара для изменения (будет откачено): ");
+            int id = int.Parse(Console.ReadLine()!);
+            Console.Write("Новая цена (не сохранится): ");
+            decimal price = decimal.Parse(Console.ReadLine()!);
+
+            using var connection = new SqlConnection(ConnectionString);
+            connection.Open();
+            using var transaction = connection.BeginTransaction();
+
+            try
+            {
+                decimal oldPrice = GetProductPrice(connection, transaction, id)
+                    ?? throw new InvalidOperationException($"Товар id={id} не найден.");
+                Console.WriteLine($"Старая цена: {oldPrice:F2}");
+
+                UpdateProductPrice(connection, transaction, id, price);
+                Console.WriteLine("Первое изменение выполнено, но НЕ подтверждено.");
+
+                throw new InvalidOperationException("Тестовая ошибка");
+            }
+            catch (Exception ex)
+            {
+                SafeRollback(transaction);
+                Console.WriteLine($"Откат: {ex.Message}");
+
+                decimal current = GetProductPrice(connection, null, id) ?? 0m;
+                Console.WriteLine($"Текущая цена после отката: {current:F2} (должна совпадать со старой)");
+            }
+        }
+// 4
+        private static void Part4_ShowData()
+        {
+            using var connection = new SqlConnection(ConnectionString);
+            connection.Open();
+
+            Console.WriteLine("--- Клиенты ---");
+            using (var cmd = new SqlCommand("SELECT id, full_name FROM customers;", connection))
+            using (var reader = cmd.ExecuteReader())
+            {
+                while (reader.Read())
+                    Console.WriteLine($"  id={reader.GetInt32(0),-3} {reader.GetString(1)}");
+            }
+
+            Console.WriteLine("--- Товары ---");
+            using (var cmd = new SqlCommand("SELECT id, name, price FROM products;", connection))
+            using (var reader = cmd.ExecuteReader())
+            {
+                while (reader.Read())
+                    Console.WriteLine(
+                        $"  id={reader.GetInt32(0),-3} {reader.GetString(1),-25} {reader.GetDecimal(2):F2} руб.");
+            }
+        }
+// 6
+        private static void Part5_6_CreateOrder()
+        {
+            Console.Write("ID клиента: ");
+            int customerId = int.Parse(Console.ReadLine()!);
+            Console.Write("ID товара: ");
+            int productId = int.Parse(Console.ReadLine()!);
+            Console.Write("Количество: ");
+            int quantity = int.Parse(Console.ReadLine()!);
+            Console.Write("Принудительная ошибка после вставки заказа? (y/N): ");
+            bool forceError = Console.ReadLine()?.Trim().ToLowerInvariant() == "y";
+
+            using var connection = new SqlConnection(ConnectionString);
+            connection.Open();
+
+            if (!CustomerExists(connection, customerId))
+            {
+                Console.WriteLine($"Клиент id={customerId} не найден.");
+                return;
+            }
+            if (GetProductPrice(connection, null, productId) == null)
+            {
+                Console.WriteLine($"Товар id={productId} не найден.");
+                return;
+            }
+
+            int orderId = CreateOrder(connection, customerId,
+                new[] { (productId, quantity) }, forceError);
+
+            if (orderId > 0)
+                Console.WriteLine($"Заказ №{orderId} успешно создан.");
+        }
+
+        private static int CreateOrder(
+            SqlConnection connection,
+            int customerId,
+            (int productId, int qty)[] items,
+            bool forceErrorAfterOrderInsert = false)
+        {
+            using var transaction = connection.BeginTransaction();
+            try
+            {
+                var prices = new decimal[items.Length];
+                for (int i = 0; i < items.Length; i++)
+                {
+                    var (pid, qty) = items[i];
+                    if (qty <= 0)
+                        throw new InvalidOperationException("Количество должно быть > 0.");
+
+                    prices[i] = GetProductPrice(connection, transaction, pid)
+                        ?? throw new InvalidOperationException($"Товар id={pid} не найден.");
+                }
+
+                int orderId;
+                using (var orderCmd = new SqlCommand(
+                    @"INSERT INTO orders (customer_id, order_date, status)
+                      VALUES (@customer_id, SYSDATETIME(), N'Новый');
+                      SELECT CAST(SCOPE_IDENTITY() AS int);", connection, transaction))
+                {
+                    orderCmd.Parameters.AddWithValue("@customer_id", customerId);
+                    orderId = (int)orderCmd.ExecuteScalar();
+                }
+                Console.WriteLine($"[TRX] Заказ вставлен, orderId={orderId} (ещё не подтверждён)");
+
+                if (forceErrorAfterOrderInsert)
+                    throw new InvalidOperationException("Принудительная ошибка после вставки заказа");
+
+                for (int i = 0; i < items.Length; i++)
+                {
+                    using var itemCmd = new SqlCommand(
+                        @"INSERT INTO order_items (order_id, product_id, quantity, unit_price)
+                          VALUES (@order_id, @product_id, @quantity, @unit_price);",
+                        connection, transaction);
+                    itemCmd.Parameters.AddWithValue("@order_id", orderId);
+                    itemCmd.Parameters.AddWithValue("@product_id", items[i].productId);
+                    itemCmd.Parameters.AddWithValue("@quantity", items[i].qty);
+                    itemCmd.Parameters.AddWithValue("@unit_price", prices[i]);
+
+                    int rows = itemCmd.ExecuteNonQuery();
+                    if (rows != 1)
+                        throw new InvalidOperationException("Не удалось добавить позицию заказа.");
+                }
+
+                transaction.Commit();
+                return orderId;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[TRX] Ошибка: {ex.Message}");
+                SafeRollback(transaction);
+                Console.WriteLine("[TRX] Выполнен откат — неполного заказа в БД нет.");
+                return -1;
+            }
+        }
+
+// 7
+        private static void Part7_ShowOrders()
+        {
+            using var connection = new SqlConnection(ConnectionString);
+            connection.Open();
+
+            const string sql = @"
+SELECT o.id, o.order_date, o.status, oi.product_id, oi.quantity, oi.unit_price
+FROM orders AS o
+JOIN order_items AS oi ON oi.order_id = o.id
+ORDER BY o.id DESC;";
+
+            using var cmd = new SqlCommand(sql, connection);
+            using var reader = cmd.ExecuteReader();
+            Console.WriteLine("order_id | order_date            | status | product_id | qty | unit_price");
+            Console.WriteLine(new string('-', 90));
+            while (reader.Read())
+            {
+                Console.WriteLine(
+                    $"{reader.GetInt32(0),-8} | {reader.GetDateTime(1):yyyy-MM-dd HH:mm:ss} | " +
+                    $"{reader.GetString(2),-6} | {reader.GetInt32(3),-10} | " +
+                    $"{reader.GetInt32(4),-3} | {reader.GetDecimal(5):F2}");
+            }
+        }
+
+// 8
+        private static void Part8_CreateOrderWithTwoItems()
+        {
+            Console.Write("ID клиента: ");
+            int customerId = int.Parse(Console.ReadLine()!);
+
+            Console.Write("Товар #1 — ID: ");
+            int p1 = int.Parse(Console.ReadLine()!);
+            Console.Write("Товар #1 — количество: ");
+            int q1 = int.Parse(Console.ReadLine()!);
+
+            Console.Write("Товар #2 — ID: ");
+            int p2 = int.Parse(Console.ReadLine()!);
+            Console.Write("Товар #2 — количество: ");
+            int q2 = int.Parse(Console.ReadLine()!);
+
+            using var connection = new SqlConnection(ConnectionString);
+            connection.Open();
+
+            if (!CustomerExists(connection, customerId))
+            {
+                Console.WriteLine($"Клиент id={customerId} не найден.");
+                return;
+            }
+
+            var items = new[] { (p1, q1), (p2, q2) };
+            int orderId = CreateOrder(connection, customerId, items);
+
+            if (orderId > 0)
+            {
+                decimal total = GetOrderTotal(connection, orderId);
+                Console.WriteLine($"Заказ №{orderId} успешно создан. Итоговая сумма: {total:F2} руб.");
+            }
+            else
+            {
+                Console.WriteLine("Заказ НЕ создан (все изменения откачены).");
+            }
+        }
+
+        private static decimal GetOrderTotal(SqlConnection connection, int orderId)
+        {
+            using var cmd = new SqlCommand(
+                "SELECT SUM(quantity * unit_price) FROM order_items WHERE order_id = @id;",
+                connection);
+            cmd.Parameters.AddWithValue("@id", orderId);
+            var res = cmd.ExecuteScalar();
+            return res == DBNull.Value || res == null ? 0m : Convert.ToDecimal(res);
+        }
+
+        private static void Extra_CancelOrder()
+        {
+            Console.Write("ID заказа для отмены: ");
+            int orderId = int.Parse(Console.ReadLine()!);
+
+            using var connection = new SqlConnection(ConnectionString);
+            connection.Open();
+            using var transaction = connection.BeginTransaction();
+
+            try
+            {
+                using (var delItems = new SqlCommand(
+                    "DELETE FROM order_items WHERE order_id = @id;", connection, transaction))
+                {
+                    delItems.Parameters.AddWithValue("@id", orderId);
+                    delItems.ExecuteNonQuery();
+                }
+
+                int rows;
+                using (var delOrder = new SqlCommand(
+                    "DELETE FROM orders WHERE id = @id;", connection, transaction))
+                {
+                    delOrder.Parameters.AddWithValue("@id", orderId);
+                    rows = delOrder.ExecuteNonQuery();
+                }
+
+                if (rows != 1)
+                    throw new InvalidOperationException($"Заказ id={orderId} не найден.");
+
+                transaction.Commit();
+                Console.WriteLine($"Заказ №{orderId} отменён (позиции и заказ удалены).");
+            }
+            catch (Exception ex)
+            {
+                SafeRollback(transaction);
+                Console.WriteLine($"Отмена не выполнена, изменения откачены: {ex.Message}");
+            }
+        }
+
+        private static bool CustomerExists(SqlConnection connection, int id)
+        {
+            using var cmd = new SqlCommand(
+                "SELECT COUNT(*) FROM customers WHERE id = @id;", connection);
+            cmd.Parameters.AddWithValue("@id", id);
+            return (int)cmd.ExecuteScalar() > 0;
+        }
+
+        private static decimal? GetProductPrice(
+            SqlConnection connection, SqlTransaction? transaction, int productId)
+        {
+            using var cmd = transaction == null
+                ? new SqlCommand("SELECT price FROM products WHERE id = @id;", connection)
+                : new SqlCommand("SELECT price FROM products WHERE id = @id;", connection, transaction);
+            cmd.Parameters.AddWithValue("@id", productId);
+            var res = cmd.ExecuteScalar();
+            return res == null || res == DBNull.Value ? null : (decimal)res;
+        }
+
+        private static void SafeRollback(SqlTransaction transaction)
+        {
+            try
+            {
+                transaction.Rollback();
+            }
+            catch (Exception rbEx)
+            {
+                Console.WriteLine($"[TRX] Ошибка отката: {rbEx.Message}");
+            }
+        }
+    }
+}
