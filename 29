@@ -1,0 +1,148 @@
+USE CollegeDB;
+GO
+//1
+
+IF OBJECT_ID('college.student_changes', 'U') IS NOT NULL
+    DROP TABLE college.student_changes;
+GO
+
+CREATE TABLE college.student_changes
+(
+    id                INT IDENTITY(1,1) PRIMARY KEY,
+    student_id        INT           NOT NULL,
+    old_average_grade DECIMAL(3,2)  NULL,
+    new_average_grade DECIMAL(3,2)  NULL,
+    change_date       DATETIME      NOT NULL DEFAULT GETDATE()
+);
+GO
+
+//2 
+
+IF OBJECT_ID('college.trg_Students_AverageGradeAudit', 'TR') IS NOT NULL
+    DROP TRIGGER college.trg_Students_AverageGradeAudit;
+GO
+
+CREATE TRIGGER college.trg_Students_AverageGradeAudit
+ON college.students
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+       реально изменился average_grade. Работаем множествами,
+       а не по одной строке. */
+    INSERT INTO college.student_changes
+        (student_id, old_average_grade, new_average_grade, change_date)
+    SELECT
+        i.id,
+        d.average_grade,
+        i.average_grade,
+        GETDATE()
+    FROM inserted i
+    INNER JOIN deleted d ON d.id = i.id
+    WHERE ISNULL(i.average_grade, -1) <> ISNULL(d.average_grade, -1);
+END;
+GO
+
+//3
+UPDATE college.students
+SET average_grade = 4.8
+WHERE id = 1;
+GO
+
+SELECT * FROM college.student_changes ORDER BY id;
+GO
+
+//4
+UPDATE college.students
+SET average_grade = average_grade + 0.1
+WHERE group_id = 1;
+GO
+
+SELECT * FROM college.student_changes ORDER BY id;
+GO
+
+//5
+
+IF OBJECT_ID('college.trg_Students_ValidateGrade', 'TR') IS NOT NULL
+    DROP TRIGGER college.trg_Students_ValidateGrade;
+GO
+
+CREATE TRIGGER college.trg_Students_ValidateGrade
+ON college.students
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF EXISTS (
+        SELECT 1
+        FROM inserted
+        WHERE average_grade < 0 OR average_grade > 5
+    )
+    BEGIN
+        THROW 50001, N'Средний балл должен быть в диапазоне от 0 до 5.', 1;
+    END
+END;
+GO
+
+//6
+UPDATE college.students SET average_grade = 4.5 WHERE id = 2;
+GO
+SELECT * FROM college.students WHERE id = 2;
+GO
+
+BEGIN TRY
+    UPDATE college.students SET average_grade = 6 WHERE id = 2;
+END TRY
+BEGIN CATCH
+    SELECT ERROR_NUMBER() AS err_num,
+           ERROR_MESSAGE() AS err_msg;
+END CATCH;
+GO
+
+SELECT * FROM college.students WHERE id = 2;
+GO
+
+IF COL_LENGTH('college.student_changes', 'old_age') IS NULL
+    ALTER TABLE college.student_changes ADD old_age INT NULL;
+IF COL_LENGTH('college.student_changes', 'new_age') IS NULL
+    ALTER TABLE college.student_changes ADD new_age INT NULL;
+GO
+
+IF OBJECT_ID('college.trg_Students_AverageGradeAudit', 'TR') IS NOT NULL
+    DROP TRIGGER college.trg_Students_AverageGradeAudit;
+GO
+
+CREATE TRIGGER college.trg_Students_AverageGradeAudit
+ON college.students
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    INSERT INTO college.student_changes
+        (student_id, old_average_grade, new_average_grade,
+         old_age, new_age, change_date)
+    SELECT
+        i.id,
+        d.average_grade,
+        i.average_grade,
+        d.age,
+        i.age,
+        GETDATE()
+    FROM inserted i
+    INNER JOIN deleted d ON d.id = i.id
+    WHERE ISNULL(i.average_grade, -1) <> ISNULL(d.average_grade, -1)
+       OR ISNULL(i.age, -1)            <> ISNULL(d.age, -1);
+END;
+GO
+
+UPDATE college.students
+SET age = age + 1,
+    average_grade = average_grade + 0.1
+WHERE id = 3;
+GO
+
+SELECT * FROM college.student_changes ORDER BY id;
+GO
