@@ -1,0 +1,261 @@
+USE CollegeDB;
+GO
+
+-- Задание 1
+
+SELECT
+    s.name                          AS student_name,
+    g.name                          AS group_name,
+    s.average_grade                 AS average_grade,
+    COUNT(gr.id)                    AS grades_count,
+    AVG(CAST(gr.grade AS DECIMAL(4,2))) AS avg_grade_from_grades
+FROM college.students AS s
+JOIN college.groups   AS g  ON g.id = s.group_id
+LEFT JOIN college.grades AS gr ON gr.student_id = s.id
+GROUP BY s.name, g.name, s.average_grade
+ORDER BY s.average_grade DESC;
+GO
+
+-- Задание 2
+
+WITH StudentStats AS (
+    SELECT
+        id,
+        name,
+        group_id,
+        average_grade
+    FROM college.students
+)
+SELECT
+    name,
+    average_grade,
+    RANK() OVER (ORDER BY average_grade DESC) AS rating
+FROM StudentStats
+ORDER BY rating;
+GO
+
+-- Задание 3
+
+WITH StudentStats AS (
+    SELECT
+        s.id,
+        s.name           AS student_name,
+        g.name           AS group_name,
+        s.average_grade
+    FROM college.students AS s
+    JOIN college.groups   AS g ON g.id = s.group_id
+)
+SELECT
+    student_name,
+    group_name,
+    average_grade,
+    RANK() OVER (
+        PARTITION BY group_name
+        ORDER BY average_grade DESC
+    ) AS group_rating
+FROM StudentStats
+ORDER BY group_name, group_rating;
+GO
+
+-- Задание 4
+
+IF OBJECT_ID('college.StudentRating', 'V') IS NOT NULL
+    DROP VIEW college.StudentRating;
+GO
+
+CREATE VIEW college.StudentRating
+AS
+WITH StudentStats AS (
+    SELECT
+        s.id,
+        s.name AS student_name,
+        g.name AS group_name,
+        s.average_grade
+    FROM college.students AS s
+    JOIN college.groups   AS g ON g.id = s.group_id
+)
+SELECT
+    id,
+    student_name     AS name,
+    group_name,
+    average_grade,
+    RANK() OVER (
+        PARTITION BY group_name
+        ORDER BY average_grade DESC
+    ) AS group_rating
+FROM StudentStats;
+GO
+
+SELECT * FROM college.StudentRating;
+GO
+
+SELECT * FROM college.StudentRating WHERE group_name = N'ИС-31';
+GO
+-- Задание 5
+
+IF OBJECT_ID('college.GetStudentsByMinGrade', 'P') IS NOT NULL
+    DROP PROCEDURE college.GetStudentsByMinGrade;
+GO
+
+CREATE PROCEDURE college.GetStudentsByMinGrade
+    @min_grade DECIMAL(4,2)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT
+        s.id,
+        s.name,
+        s.average_grade,
+        g.name AS group_name
+    FROM college.students AS s
+    JOIN college.groups   AS g ON g.id = s.group_id
+    WHERE s.average_grade >= @min_grade
+    ORDER BY s.average_grade DESC;
+END;
+GO
+
+EXEC college.GetStudentsByMinGrade @min_grade = 4.5;
+GO
+
+EXEC college.GetStudentsByMinGrade @min_grade = 4.0;
+GO
+
+-- Задание 6
+
+IF OBJECT_ID('college.GetStudentStatus', 'FN') IS NOT NULL
+    DROP FUNCTION college.GetStudentStatus;
+GO
+
+CREATE FUNCTION college.GetStudentStatus
+(
+    @average_grade DECIMAL(4,2)
+)
+RETURNS NVARCHAR(100)
+AS
+BEGIN
+    DECLARE @status NVARCHAR(100);
+
+    IF @average_grade >= 4.5
+        SET @status = N'Отличник';
+    ELSE IF @average_grade >= 3.5
+        SET @status = N'Хорошист';
+    ELSE
+        SET @status = N'Требуется дополнительная подготовка';
+
+    RETURN @status;
+END;
+GO
+
+SELECT
+    name,
+    average_grade,
+    college.GetStudentStatus(average_grade) AS status
+FROM college.students;
+GO
+-- Задание 7
+
+IF OBJECT_ID('college.GetStudentsByGroup', 'IF') IS NOT NULL
+    DROP FUNCTION college.GetStudentsByGroup;
+GO
+
+CREATE FUNCTION college.GetStudentsByGroup
+(
+    @group_id INT
+)
+RETURNS TABLE
+AS
+RETURN
+(
+    SELECT
+        id,
+        name,
+        age,
+        average_grade
+    FROM college.students
+    WHERE group_id = @group_id
+);
+GO
+
+SELECT * FROM college.GetStudentsByGroup(1);
+GO
+
+SELECT * FROM college.GetStudentsByGroup(1) WHERE average_grade >= 4.5;
+GO
+
+-- Задание 8
+
+IF OBJECT_ID('college.student_changes', 'U') IS NOT NULL
+    DROP TABLE college.student_changes;
+GO
+
+CREATE TABLE college.student_changes
+(
+    id                 INT IDENTITY(1,1) PRIMARY KEY,
+    student_id         INT           NOT NULL,
+    old_average_grade  DECIMAL(4,2)  NULL,
+    new_average_grade  DECIMAL(4,2)  NULL,
+    change_date        DATETIME      NOT NULL DEFAULT GETDATE()
+);
+GO
+
+IF OBJECT_ID('college.trg_Students_AverageGradeAudit', 'TR') IS NOT NULL
+    DROP TRIGGER college.trg_Students_AverageGradeAudit;
+GO
+
+CREATE TRIGGER college.trg_Students_AverageGradeAudit
+ON college.students
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    INSERT INTO college.student_changes
+        (student_id, old_average_grade, new_average_grade, change_date)
+    SELECT
+        i.id,
+        d.average_grade,
+        i.average_grade,
+        GETDATE()
+    FROM inserted AS i
+    JOIN deleted  AS d ON d.id = i.id
+    WHERE i.average_grade <> d.average_grade
+       OR (i.average_grade IS NULL AND d.average_grade IS NOT NULL)
+       OR (i.average_grade IS NOT NULL AND d.average_grade IS NULL);
+END;
+GO
+
+UPDATE college.students
+SET average_grade = average_grade + 0.1
+WHERE id = 1;
+GO
+
+SELECT * FROM college.student_changes;
+GO
+
+UPDATE college.students
+SET average_grade = average_grade + 0.1
+WHERE group_id = 1;
+GO
+
+SELECT * FROM college.student_changes;
+GO
+
+SELECT
+    sr.name                       AS student_name,
+    sr.group_name,
+    sr.average_grade,
+    college.GetStudentStatus(sr.average_grade) AS status,
+    sr.group_rating,
+    COUNT(gr.id)                  AS grades_count
+FROM college.StudentRating AS sr
+LEFT JOIN college.grades   AS gr ON gr.student_id = sr.id
+GROUP BY
+    sr.name,
+    sr.group_name,
+    sr.average_grade,
+    sr.group_rating
+ORDER BY
+    sr.group_name,
+    sr.group_rating;
+GO
