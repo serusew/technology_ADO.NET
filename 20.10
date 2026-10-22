@@ -1,0 +1,47 @@
+using System;
+using System.Data;
+using Microsoft.Data.SqlClient;
+
+class Program
+{
+    static void Main()
+    {
+        string connectionString =
+            "Server=localhost;Database=coffee_shop;Trusted_Connection=True;TrustServerCertificate=True;";
+
+        string sql = "SELECT id, name, price, is_available FROM products";
+
+        // 1
+        DataTable products = new DataTable("products");
+
+        using (SqlConnection connection = new SqlConnection(connectionString))
+        using (SqlDataAdapter adapter = new SqlDataAdapter(sql, connection))
+        {
+            adapter.Fill(products);
+        }
+
+        Console.WriteLine($"Загружено товаров: {products.Rows.Count}");
+        Console.WriteLine();
+
+        // 2 
+        DataRow[] available = products.Select("is_available = true", "price ASC");
+
+        Console.WriteLine("Доступные товары (по возрастанию цены):");
+        foreach (DataRow row in available)
+        {
+            Console.WriteLine($"{row.Field<int>("id")}. {row.Field<string>("name")} — {row.Field<decimal>("price")} руб.");
+        }
+        Console.WriteLine();
+
+        if (products.Rows.Count > 0)
+        {
+            DataRow product = products.Rows[0];
+
+            Console.WriteLine($"До изменения: {product["name"]} — {product["price"]} руб., RowState = {product.RowState}");
+
+            product["price"] = 250m;
+
+            Console.WriteLine($"После изменения: {product["name"]} — {product["price"]} руб., RowState = {product.RowState}");
+        }
+    }
+}
