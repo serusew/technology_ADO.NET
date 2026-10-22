@@ -1,0 +1,40 @@
+using System;
+using Microsoft.Data.SqlClient;
+
+class Program
+{
+    static void Main()
+    {
+        string connectionString = @"Server=(localdb)\MSSQLLocalDB;Database=coffee_shop;Integrated Security=True;TrustServerCertificate=True;";
+        string sql = "SELECT id, name, price, is_available FROM products";
+
+        using SqlConnection connection = new SqlConnection(connectionString);
+        connection.Open();
+
+        using SqlCommand command = new SqlCommand(sql, connection);
+        using SqlDataReader reader = command.ExecuteReader();
+
+        if (!reader.HasRows)
+        {
+            Console.WriteLine("Запрос не вернул ни одной строки.");
+            return;
+        }
+
+        Console.WriteLine("Список товаров:");
+        Console.WriteLine("");
+
+        while (reader.Read())
+        {
+            int id = reader.GetInt32(0);       
+            string name = reader.GetString(1);    
+            decimal price = reader.GetDecimal(2); 
+            bool isAvailable = reader.GetBoolean(3); 
+
+            Console.WriteLine($"ID: {id}");
+            Console.WriteLine($"Название: {name}");
+            Console.WriteLine($"Цена: {price} руб.");
+            Console.WriteLine($"Доступен: {(isAvailable ? "Да" : "Нет")}");
+            Console.WriteLine("");
+        }
+    }
+}
