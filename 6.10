@@ -1,0 +1,56 @@
+using Microsoft.Data.SqlClient;
+
+string connectionString =
+    "Server=localhost;Database=coffee_shop;Trusted_Connection=True;TrustServerCertificate=True;";
+
+using var connection = new SqlConnection(connectionString);
+connection.Open();
+Console.WriteLine("Подключение установлено.\n");
+
+string insertSql = @"INSERT INTO products (name, category_id, price) 
+                     VALUES (N'Мокка', 1, 240.00);";
+using (var cmd = new SqlCommand(insertSql, connection))
+{
+    Console.WriteLine($"Добавлено строк: {cmd.ExecuteNonQuery()}");
+}
+
+string clientsSql = "SELECT COUNT(*) FROM clients;";
+using (var cmd = new SqlCommand(clientsSql, connection))
+{
+    Console.WriteLine($"Клиентов: {Convert.ToInt32(cmd.ExecuteScalar())}");
+}
+
+string maxPriceSql = "SELECT MAX(price) FROM products;";
+using (var cmd = new SqlCommand(maxPriceSql, connection))
+{
+    Console.WriteLine($"Макс. цена: {Convert.ToDecimal(cmd.ExecuteScalar())}");
+}
+
+string listSql = "SELECT id, name, price FROM products;";
+using (var cmd = new SqlCommand(listSql, connection))
+using (var reader = cmd.ExecuteReader())
+{
+    Console.WriteLine("Список товаров:");
+    while (reader.Read())
+    {
+        Console.WriteLine($"  {reader["id"]}: {reader["name"]} — {reader["price"]}");
+    }
+}
+
+string updateSql = "UPDATE products SET price = 250.00 WHERE id = 3;";
+using (var cmd = new SqlCommand(updateSql, connection))
+{
+    Console.WriteLine($"Обновлено строк: {cmd.ExecuteNonQuery()}");
+}
+
+string deleteSql = "DELETE FROM products WHERE id = 16;";
+using (var cmd = new SqlCommand(deleteSql, connection))
+{
+    Console.WriteLine($"Удалено строк: {cmd.ExecuteNonQuery()}");
+}
+
+string dbNameSql = "SELECT DB_NAME();";
+using (var cmd = new SqlCommand(dbNameSql, connection))
+{
+    Console.WriteLine($"База данных: {Convert.ToString(cmd.ExecuteScalar())}");
+}
