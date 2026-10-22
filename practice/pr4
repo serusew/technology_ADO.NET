@@ -1,0 +1,327 @@
+using Microsoft.Data.SqlClient;
+
+string connectionString =
+    "Server=localhost;Database=coffee_shop;Trusted_Connection=True;TrustServerCertificate=True;";
+
+//  2
+void ShowProducts()
+{
+    string sql = @"SELECT id, name, price, is_available FROM products";
+
+    using SqlConnection connection = new SqlConnection(connectionString);
+    connection.Open();
+
+    using SqlCommand command = new SqlCommand(sql, connection);
+    using SqlDataReader reader = command.ExecuteReader();
+
+    if (!reader.HasRows)
+    {
+        Console.WriteLine("Товары не найдены.");
+        return;
+    }
+
+    while (reader.Read())
+    {
+        int id = reader.GetInt32(0);
+        string name = reader.GetString(1);
+        decimal price = reader.GetDecimal(2);
+        bool isAvailable = reader.GetBoolean(3);
+
+        Console.WriteLine($"{id}. {name}");
+        Console.WriteLine($"   Цена: {price} руб.");
+        Console.WriteLine($"   Доступен: {(isAvailable ? "Да" : "Нет")}");
+        Console.WriteLine();
+    }
+}
+
+// 4
+void FindProductById()
+{
+    Console.Write("Введите id товара: ");
+    if (!int.TryParse(Console.ReadLine(), out int id))
+    {
+        Console.WriteLine("Некорректный id.");
+        return;
+    }
+
+    string sql = @"SELECT id, name, price, is_available
+                   FROM products WHERE id = @id";
+
+    using SqlConnection connection = new SqlConnection(connectionString);
+    connection.Open();
+
+    using SqlCommand command = new SqlCommand(sql, connection);
+    command.Parameters.AddWithValue("@id", id);
+
+    using SqlDataReader reader = command.ExecuteReader();
+
+    if (!reader.Read())
+    {
+        Console.WriteLine("Товар не найден.");
+        return;
+    }
+
+    string name = reader.GetString(1);
+    decimal price = reader.GetDecimal(2);
+    bool isAvailable = reader.GetBoolean(3);
+
+    Console.WriteLine($"Название: {name}");
+    Console.WriteLine($"Цена: {price} руб.");
+    Console.WriteLine($"Доступен: {(isAvailable ? "Да" : "Нет")}");
+}
+
+// 5
+void FindProductsByName()
+{
+    Console.Write("Введите часть названия: ");
+    string search = Console.ReadLine() ?? "";
+
+    string sql = @"SELECT id, name, price FROM products
+                   WHERE name LIKE @search";
+
+    using SqlConnection connection = new SqlConnection(connectionString);
+    connection.Open();
+
+    using SqlCommand command = new SqlCommand(sql, connection);
+    command.Parameters.AddWithValue("@search", "%" + search + "%");
+
+    using SqlDataReader reader = command.ExecuteReader();
+
+    if (!reader.HasRows)
+    {
+        Console.WriteLine("Совпадений не найдено.");
+        return;
+    }
+
+    while (reader.Read())
+    {
+        int id = reader.GetInt32(0);
+        string name = reader.GetString(1);
+        decimal price = reader.GetDecimal(2);
+        Console.WriteLine($"{id}. {name} — {price} руб.");
+    }
+}
+
+// 6
+void ShowCustomers()
+{
+    string sql = @"SELECT id, full_name, phone, email FROM customers";
+
+    using SqlConnection connection = new SqlConnection(connectionString);
+    connection.Open();
+
+    using SqlCommand command = new SqlCommand(sql, connection);
+    using SqlDataReader reader = command.ExecuteReader();
+
+    if (!reader.HasRows)
+    {
+        Console.WriteLine("Клиенты не найдены.");
+        return;
+    }
+
+    while (reader.Read())
+    {
+        int id = reader.GetInt32(0);
+        string fullName = reader.GetString(1);
+
+        string phone = reader.IsDBNull(2) ? "Не указан" : reader.GetString(2);
+        string email = reader.IsDBNull(3) ? "Не указан" : reader.GetString(3);
+
+        Console.WriteLine($"{id}. {fullName}");
+        Console.WriteLine($"   Телефон: {phone}");
+        Console.WriteLine($"   Email:   {email}");
+        Console.WriteLine();
+    }
+}
+
+// 7
+void ShowOrders()
+{
+    string sql = @"SELECT id, customer_id, order_date, status FROM orders";
+
+    using SqlConnection connection = new SqlConnection(connectionString);
+    connection.Open();
+
+    using SqlCommand command = new SqlCommand(sql, connection);
+    using SqlDataReader reader = command.ExecuteReader();
+
+    if (!reader.HasRows)
+    {
+        Console.WriteLine("Заказы не найдены.");
+        return;
+    }
+
+    while (reader.Read())
+    {
+        int id = reader.GetInt32(0);
+        int customerId = reader.GetInt32(1);
+        DateTime orderDate = reader.GetDateTime(2);
+        string status = reader.GetString(3);
+
+        Console.WriteLine($"Заказ №{id}");
+        Console.WriteLine($"   Клиент:   {customerId}");
+        Console.WriteLine($"   Дата:     {orderDate:dd.MM.yyyy HH:mm}");
+        Console.WriteLine($"   Статус:   {status}");
+        Console.WriteLine();
+    }
+}
+// 8
+void ShowAvailableProductsByPrice()
+{
+    string sql = @"SELECT id, name, price FROM products
+                   WHERE is_available = 1
+                   ORDER BY price ASC";
+
+    using SqlConnection connection = new SqlConnection(connectionString);
+    connection.Open();
+
+    using SqlCommand command = new SqlCommand(sql, connection);
+    using SqlDataReader reader = command.ExecuteReader();
+
+    if (!reader.HasRows)
+    {
+        Console.WriteLine("Доступных товаров нет.");
+        return;
+    }
+
+    Console.WriteLine("Доступные товары (по возрастанию цены):");
+    while (reader.Read())
+    {
+        int id = reader.GetInt32(0);
+        string name = reader.GetString(1);
+        decimal price = reader.GetDecimal(2);
+        Console.WriteLine($"{id}. {name} — {price} руб.");
+    }
+}
+
+void ShowProductsMoreExpensiveThan()
+{
+    Console.Write("Введите минимальную цену: ");
+    if (!decimal.TryParse(Console.ReadLine(), out decimal minPrice))
+    {
+        Console.WriteLine("Некорректная цена.");
+        return;
+    }
+
+    string sql = @"SELECT id, name, price FROM products
+                   WHERE price > @minPrice
+                   ORDER BY price ASC";
+
+    using SqlConnection connection = new SqlConnection(connectionString);
+    connection.Open();
+
+    using SqlCommand command = new SqlCommand(sql, connection);
+    command.Parameters.AddWithValue("@minPrice", minPrice);
+
+    using SqlDataReader reader = command.ExecuteReader();
+
+    if (!reader.HasRows)
+    {
+        Console.WriteLine("Товаров дороже указанной цены не найдено.");
+        return;
+    }
+
+    while (reader.Read())
+    {
+        int id = reader.GetInt32(0);
+        string name = reader.GetString(1);
+        decimal price = reader.GetDecimal(2);
+        Console.WriteLine($"{id}. {name} — {price} руб.");
+    }
+}
+
+void FindCustomerByName()
+{
+    Console.Write("Введите часть Ф.И.О.: ");
+    string search = Console.ReadLine() ?? "";
+
+    string sql = @"SELECT id, full_name, phone, email FROM customers
+                   WHERE full_name LIKE @search";
+
+    using SqlConnection connection = new SqlConnection(connectionString);
+    connection.Open();
+
+    using SqlCommand command = new SqlCommand(sql, connection);
+    command.Parameters.AddWithValue("@search", "%" + search + "%");
+
+    using SqlDataReader reader = command.ExecuteReader();
+
+    if (!reader.HasRows)
+    {
+        Console.WriteLine("Клиенты не найдены.");
+        return;
+    }
+
+    while (reader.Read())
+    {
+        int id = reader.GetInt32(0);
+        string fullName = reader.GetString(1);
+        string phone = reader.IsDBNull(2) ? "Не указан" : reader.GetString(2);
+        string email = reader.IsDBNull(3) ? "Не указан" : reader.GetString(3);
+        Console.WriteLine($"{id}. {fullName} | {phone} | {email}");
+    }
+}
+
+void ShowOrdersByStatus()
+{
+    Console.Write("Введите статус заказа: ");
+    string status = Console.ReadLine() ?? "";
+
+    string sql = @"SELECT id, customer_id, order_date, status FROM orders
+                   WHERE status = @status
+                   ORDER BY order_date DESC";
+
+    using SqlConnection connection = new SqlConnection(connectionString);
+    connection.Open();
+
+    using SqlCommand command = new SqlCommand(sql, connection);
+    command.Parameters.AddWithValue("@status", status);
+
+    using SqlDataReader reader = command.ExecuteReader();
+
+    if (!reader.HasRows)
+    {
+        Console.WriteLine($"Заказов со статусом «{status}» не найдено.");
+        return;
+    }
+
+    while (reader.Read())
+    {
+        int id = reader.GetInt32(0);
+        int customerId = reader.GetInt32(1);
+        DateTime orderDate = reader.GetDateTime(2);
+        string st = reader.GetString(3);
+
+        Console.WriteLine($"Заказ №{id} | Клиент {customerId} | {orderDate:dd.MM.yyyy HH:mm} | {st}");
+    }
+}
+
+void ShowOrdersWithCustomerNames()
+{
+    string sql = @"SELECT o.id, c.full_name, o.order_date, o.status
+                   FROM orders o
+                   JOIN customers c ON c.id = o.customer_id
+                   ORDER BY o.order_date DESC";
+
+    using SqlConnection connection = new SqlConnection(connectionString);
+    connection.Open();
+
+    using SqlCommand command = new SqlCommand(sql, connection);
+    using SqlDataReader reader = command.ExecuteReader();
+
+    if (!reader.HasRows)
+    {
+        Console.WriteLine("Заказы не найдены.");
+        return;
+    }
+
+    while (reader.Read())
+    {
+        int id = reader.GetInt32(0);
+        string fullName = reader.GetString(1);
+        DateTime orderDate = reader.GetDateTime(2);
+        string status = reader.GetString(3);
+
+        Console.WriteLine($"Заказ №{id} | {fullName} | {orderDate:dd.MM.yyyy HH:mm} | {status}");
+    }
+}
