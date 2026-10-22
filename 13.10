@@ -1,0 +1,105 @@
+using System;
+using System.Data;
+using Microsoft.Data.SqlClient;
+
+namespace CoffeeShop.Transactions
+{
+    internal static class Program
+    {
+
+        private const string ConnectionString =
+            "Server=localhost;Database=coffee_shop;Integrated Security=True;TrustServerCertificate=True;";
+
+        private static void Main()
+        {
+            try
+            {
+                int orderId = CreateOrderWithTwoItems(
+                    customerId: 1,
+                    firstProductId: 1,
+                    firstQuantity: 2,
+                    firstUnitPrice: 180m,
+                    secondProductId: 2,
+                    secondQuantity: 1,
+                    secondUnitPrice: 250m);
+
+                Console.WriteLine($"Заказ №{orderId} успешно создан.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Не удалось создать заказ: {ex.Message}");
+            }
+        }
+
+        private static int CreateOrderWithTwoItems(
+            int customerId,
+            int firstProductId,
+            int firstQuantity,
+            decimal firstUnitPrice,
+            int secondProductId,
+            int secondQuantity,
+            decimal secondUnitPrice)
+        {
+            using SqlConnection connection = new SqlConnection(ConnectionString);
+            connection.Open();
+
+            using SqlTransaction transaction = connection.BeginTransaction();
+
+            try
+            {
+                const string orderSql = @"
+                    INSERT INTO orders (customer_id, order_date, status)
+                    VALUES (@customer_id, SYSDATETIME(), N'Новый');
+                    SELECT CAST(SCOPE_IDENTITY() AS int);";
+
+                using SqlCommand orderCommand = new SqlCommand(orderSql, connection, transaction);
+                orderCommand.Parameters.AddWithValue("@customer_id", customerId);
+
+                int orderId = (int)orderCommand.ExecuteScalar();
+
+                const string itemSql = @"
+                    INSERT INTO order_items (order_id, product_id, quantity, unit_price)
+                    VALUES (@order_id, @product_id, @quantity, @unit_price);";
+
+                using (SqlCommand itemCommand1 = new SqlCommand(itemSql, connection, transaction))
+                {
+                    itemCommand1.Parameters.AddWithValue("@order_id", orderId);
+                    itemCommand1.Parameters.AddWithValue("@product_id", firstProductId);
+                    itemCommand1.Parameters.AddWithValue("@quantity", firstQuantity);
+                    itemCommand1.Parameters.AddWithValue("@unit_price", firstUnitPrice);
+
+                    itemCommand1.ExecuteNonQuery();
+                }
+
+                using (SqlCommand itemCommand2 = new SqlCommand(itemSql, connection, transaction))
+                {
+                    itemCommand2.Parameters.AddWithValue("@order_id", orderId);
+                    itemCommand2.Parameters.AddWithValue("@product_id", secondProductId);
+                    itemCommand2.Parameters.AddWithValue("@quantity", secondQuantity);
+                    itemCommand2.Parameters.AddWithValue("@unit_price", secondUnitPrice);
+
+                    itemCommand2.ExecuteNonQuery();
+                }
+
+                transaction.Commit();
+
+                return orderId;
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    transaction.Rollback();
+                    Console.WriteLine("Транзакция откатана: изменения не сохранены.");
+                }
+                catch (Exception rollbackEx)
+                {
+                    Console.WriteLine($"Ошибка отката: {rollbackEx.Message}");
+                }
+
+                Console.WriteLine($"Ошибка при создании заказа: {ex.Message}");
+                throw; 
+            }
+        }
+    }
+}
