@@ -1,0 +1,246 @@
+using Microsoft.Data.SqlClient;
+
+string connectionString =
+    "Server=localhost;Database=coffee_shop;Trusted_Connection=True;TrustServerCertificate=True;";
+
+using var connection = new SqlConnection(connectionString);
+
+try
+{
+    connection.Open();
+    Console.WriteLine("Подключение к базе данных установлено.");
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"Ошибка подключения: {ex.Message}");
+    return;
+}
+
+RunInitialTasks(connection);
+
+RunMenu(connection);
+
+static void RunInitialTasks(SqlConnection connection)
+{
+-- 3
+    {
+        string sql = "SELECT DB_NAME();";
+        using var command = new SqlCommand(sql, connection);
+        string databaseName = Convert.ToString(command.ExecuteScalar()) ?? "";
+        Console.WriteLine($"База данных: {databaseName}");
+    }
+
+-- 4
+    {
+        string sql = "SELECT COUNT(*) FROM products;";
+        using var command = new SqlCommand(sql, connection);
+        int productCount = Convert.ToInt32(command.ExecuteScalar());
+        Console.WriteLine($"Количество товаров: {productCount}");
+    }
+
+-- 5
+    {
+        string sql = "SELECT id, name, price FROM products;";
+        using var command = new SqlCommand(sql, connection);
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            Console.WriteLine(
+                $"{reader["id"]}. {reader["name"]} - {reader["price"]} руб.");
+        }
+    }
+
+-- 6
+    {
+        string sql = "INSERT INTO products (name, category_id, price) " +
+                     "VALUES (N'Mokka', 1, 240.00);";
+        using var command = new SqlCommand(sql, connection);
+        int rowsAffected = command.ExecuteNonQuery();
+        Console.WriteLine($"Добавлено строк: {rowsAffected}");
+    }
+
+-- 7
+    {
+        string sql = "UPDATE products SET price = 250.00 WHERE name = N'Mokka';";
+        using var command = new SqlCommand(sql, connection);
+        int rowsAffected = command.ExecuteNonQuery();
+        Console.WriteLine($"Изменено строк: {rowsAffected}");
+    }
+
+-- 8
+    {
+        string sql = "SELECT MAX(price) FROM products;";
+        using var command = new SqlCommand(sql, connection);
+        object result = command.ExecuteScalar();
+        decimal maxPrice = result == DBNull.Value ? 0m : Convert.ToDecimal(result);
+        Console.WriteLine($"Максимальная цена: {maxPrice} руб.");
+    }
+
+-- 9
+    {
+        string sql = "SELECT COUNT(*) FROM orders;";
+        using var command = new SqlCommand(sql, connection);
+        int ordersCount = Convert.ToInt32(command.ExecuteScalar());
+        Console.WriteLine($"Количество заказов: {ordersCount}");
+    }
+
+
+    // 1
+    {
+        string sql = "SELECT COUNT(*) FROM customers;";
+        using var command = new SqlCommand(sql, connection);
+        int customersCount = Convert.ToInt32(command.ExecuteScalar());
+        Console.WriteLine($"Количество клиентов: {customersCount}");
+    }
+
+    // 2
+    {
+        string sql = "SELECT COUNT(*) FROM products WHERE is_available = 1;";
+        using var command = new SqlCommand(sql, connection);
+        int availableCount = Convert.ToInt32(command.ExecuteScalar());
+        Console.WriteLine($"Доступных товаров: {availableCount}");
+    }
+
+    // 3
+    {
+        string sql = "SELECT MIN(price) FROM products;";
+        using var command = new SqlCommand(sql, connection);
+        object result = command.ExecuteScalar();
+        decimal minPrice = result == DBNull.Value ? 0m : Convert.ToDecimal(result);
+        Console.WriteLine($"Минимальная цена: {minPrice} руб.");
+    }
+
+    // 4
+    {
+        string sql = "SELECT COUNT(*) FROM orders WHERE status = N'Выдан';";
+        using var command = new SqlCommand(sql, connection);
+        int issuedCount = Convert.ToInt32(command.ExecuteScalar());
+        Console.WriteLine($"Выданных заказов: {issuedCount}");
+    }
+
+    // 5
+    {
+        string sql = "INSERT INTO products (name, category_id, price) " +
+                     "VALUES (N'Раф', 2, 210.00);";
+        using var command = new SqlCommand(sql, connection);
+        int rowsAffected = command.ExecuteNonQuery();
+        Console.WriteLine($"Добавлено строк (свой товар 'Раф'): {rowsAffected}");
+    }
+
+    {
+        string sql = "DELETE FROM products WHERE name = N'Mokka';";
+        using var command = new SqlCommand(sql, connection);
+        int rowsAffected = command.ExecuteNonQuery();
+        Console.WriteLine($"Удалено строк: {rowsAffected}");
+    }
+}
+
+static void RunMenu(SqlConnection connection)
+{
+    while (true)
+    {
+        Console.WriteLine("\nCOFFEE SHOP ");
+        Console.WriteLine("1. Количество товаров");
+        Console.WriteLine("2. Список товаров");
+        Console.WriteLine("3. Количество клиентов");
+        Console.WriteLine("4. Количество заказов");
+        Console.WriteLine("5. Самый дорогой товар");
+        Console.WriteLine("6. Добавить товар");
+        Console.WriteLine("0. Выход");
+        Console.Write("Выберите пункт: ");
+
+        string? choice = Console.ReadLine();
+
+        switch (choice)
+        {
+            case "1":
+                RunScalar(connection,
+                    "SELECT COUNT(*) FROM products;",
+                    "Количество товаров");
+                break;
+
+            case "2":
+                PrintProducts(connection);
+                break;
+
+            case "3":
+                RunScalar(connection,
+                    "SELECT COUNT(*) FROM customers;",
+                    "Количество клиентов");
+                break;
+
+            case "4":
+                RunScalar(connection,
+                    "SELECT COUNT(*) FROM orders;",
+                    "Количество заказов");
+                break;
+
+            case "5":
+                RunScalar(connection,
+                    "SELECT MAX(price) FROM products;",
+                    "Максимальная цена");
+                break;
+
+            case "6":
+                AddProductInteractive(connection);
+                break;
+
+            case "0":
+                Console.WriteLine("Выход из программы.");
+                return;
+
+            default:
+                Console.WriteLine("Неизвестный пункт меню.");
+                break;
+        }
+    }
+}
+
+static void RunScalar(SqlConnection connection, string sql, string label)
+{
+    using var command = new SqlCommand(sql, connection);
+    object result = command.ExecuteScalar();
+    Console.WriteLine($"{label}: {result}");
+}
+
+static void PrintProducts(SqlConnection connection)
+{
+    string sql = "SELECT id, name, price FROM products ORDER BY id;";
+    using var command = new SqlCommand(sql, connection);
+    using var reader = command.ExecuteReader();
+    while (reader.Read())
+    {
+        Console.WriteLine(
+            $"{reader["id"]}. {reader["name"]} - {reader["price"]} руб.");
+    }
+}
+
+static void AddProductInteractive(SqlConnection connection)
+{
+    Console.Write("Название товара: ");
+    string name = Console.ReadLine() ?? "";
+
+    Console.Write("ID категории: ");
+    if (!int.TryParse(Console.ReadLine(), out int categoryId))
+    {
+        Console.WriteLine("Некорректный ID категории.");
+        return;
+    }
+
+    Console.Write("Цена: ");
+    if (!decimal.TryParse(Console.ReadLine(), out decimal price))
+    {
+        Console.WriteLine("Некорректная цена.");
+        return;
+    }
+
+    string sql = "INSERT INTO products (name, category_id, price) " +
+                 "VALUES (@name, @categoryId, @price);";
+    using var command = new SqlCommand(sql, connection);
+    command.Parameters.AddWithValue("@name", name);
+    command.Parameters.AddWithValue("@categoryId", categoryId);
+    command.Parameters.AddWithValue("@price", price);
+
+    int rows = command.ExecuteNonQuery();
+    Console.WriteLine($"Добавлено строк: {rows}");
+}
