@@ -1,0 +1,288 @@
+using Microsoft.Data.SqlClient;
+
+string connectionString =
+    "Server=localhost;Database=coffee_shop;Trusted_Connection=True;TrustServerCertificate=True;";
+
+try
+{
+    await MainMenuAsync(connectionString);
+}
+catch (SqlException ex)
+{
+    Console.WriteLine($"Критическая ошибка SQL: {ex.Message}");
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"Критическая ошибка: {ex.Message}");
+}
+
+// 2
+
+static async Task<int> GetProductCountAsync(string connectionString)
+{
+    await using SqlConnection connection = new SqlConnection(connectionString);
+    await connection.OpenAsync();
+
+    using SqlCommand command = new SqlCommand("SELECT COUNT(*) FROM products", connection);
+    return (int)(await command.ExecuteScalarAsync())!;
+}
+
+// 3
+static async Task ShowProductsAsync(string connectionString, CancellationToken token = default)
+{
+    await using SqlConnection connection = new SqlConnection(connectionString);
+    await connection.OpenAsync(token);
+
+    using SqlCommand command = new SqlCommand(
+        "SELECT id, name, price, is_available FROM products ORDER BY name;", connection);
+
+    await using SqlDataReader reader = await command.ExecuteReaderAsync(token);
+
+    bool hasRows = false;
+    while (await reader.ReadAsync(token))
+    {
+        hasRows = true;
+        int id = reader.GetInt32(0);
+        string name = reader.GetString(1);
+        decimal price = reader.GetDecimal(2);
+        bool available = reader.GetBoolean(3);
+        Console.WriteLine($"{id}. {name} – {price} руб. | {(available ? "Есть" : "Нет")}");
+    }
+
+    if (!hasRows)
+        Console.WriteLine("Товары не найдены.");
+}
+
+// 4
+static async Task ShowProductsFromPriceAsync(string connectionString, decimal minPrice)
+{
+    await using SqlConnection connection = new SqlConnection(connectionString);
+    await connection.OpenAsync();
+
+    using SqlCommand command = new SqlCommand(
+        "SELECT id, name, price FROM products WHERE price >= @min_price ORDER BY price;",
+        connection);
+    command.Parameters.AddWithValue("@min_price", minPrice);
+
+    await using SqlDataReader reader = await command.ExecuteReaderAsync();
+
+    bool found = false;
+    while (await reader.ReadAsync())
+    {
+        found = true;
+        Console.WriteLine($"{reader.GetInt32(0)}. {reader.GetString(1)} – {reader.GetDecimal(2)} руб.");
+    }
+
+    if (!found)
+        Console.WriteLine($"Товаров с ценой не ниже {minPrice} руб. не найдено.");
+}
+
+// 5
+
+static async Task UpdateProductAvailabilityAsync(
+    string connectionString, int productId, bool isAvailable)
+{
+    await using SqlConnection connection = new SqlConnection(connectionString);
+    await connection.OpenAsync();
+
+    using SqlCommand command = new SqlCommand(
+        "UPDATE products SET is_available = @is_available WHERE id = @id;", connection);
+    command.Parameters.AddWithValue("@is_available", isAvailable);
+    command.Parameters.AddWithValue("@id", productId);
+
+    int affected = await command.ExecuteNonQueryAsync();
+
+    if (affected == 0)
+        Console.WriteLine($"Товар с id={productId} не найден.");
+    else
+        Console.WriteLine($"Доступность товара {productId} изменена на " +
+                          $"{(isAvailable ? "«Есть»" : "«Нет»")}.");
+}
+
+// 7
+static async Task ShowAvailableProductsAsync(string connectionString)
+{
+    await using SqlConnection connection = new SqlConnection(connectionString);
+    await connection.OpenAsync();
+
+    using SqlCommand command = new SqlCommand(
+        "SELECT id, name, price FROM products WHERE is_available = 1 ORDER BY name;", connection);
+
+    await using SqlDataReader reader = await command.ExecuteReaderAsync();
+
+    bool found = false;
+    while (await reader.ReadAsync())
+    {
+        found = true;
+        Console.WriteLine($"{reader.GetInt32(0)}. {reader.GetString(1)} – {reader.GetDecimal(2)} руб.");
+    }
+    if (!found) Console.WriteLine("Доступных товаров нет.");
+}
+
+static async Task SearchProductsByNameAsync(string connectionString, string search)
+{
+    await using SqlConnection connection = new SqlConnection(connectionString);
+    await connection.OpenAsync();
+
+    using SqlCommand command = new SqlCommand(
+        "SELECT id, name, price, is_available FROM products WHERE name LIKE @search ORDER BY name;",
+        connection);
+    command.Parameters.AddWithValue("@search", $"%{search}%");
+
+    await using SqlDataReader reader = await command.ExecuteReaderAsync();
+
+    bool found = false;
+    while (await reader.ReadAsync())
+    {
+        found = true;
+        bool available = reader.GetBoolean(3);
+        Console.WriteLine($"{reader.GetInt32(0)}. {reader.GetString(1)} – " +
+                          $"{reader.GetDecimal(2)} руб. | {(available ? "Есть" : "Нет")}");
+    }
+    if (!found) Console.WriteLine("Ничего не найдено.");
+}
+
+static async Task<int> GetCustomerCountAsync(string connectionString)
+{
+    await using SqlConnection connection = new SqlConnection(connectionString);
+    await connection.OpenAsync();
+
+    using SqlCommand command = new SqlCommand("SELECT COUNT(*) FROM customers", connection);
+    return (int)(await command.ExecuteScalarAsync())!;
+}
+
+
+static async Task GetCustomerOrdersAsync(string connectionString, int customerId)
+{
+    await using SqlConnection connection = new SqlConnection(connectionString);
+    await connection.OpenAsync();
+
+    using SqlCommand command = new SqlCommand(@"
+        SELECT o.id, o.order_date, o.status
+        FROM orders o
+        JOIN customers c ON c.id = o.customer_id
+        WHERE c.id = @customer_id
+        ORDER BY o.order_date DESC;", connection);
+    command.Parameters.AddWithValue("@customer_id", customerId);
+
+    await using SqlDataReader reader = await command.ExecuteReaderAsync();
+
+    bool found = false;
+    Console.WriteLine($"Заказы клиента {customerId}:");
+    while (await reader.ReadAsync())
+    {
+        found = true;
+        int orderId = reader.GetInt32(0);
+        DateTime date = reader.GetDateTime(1);
+        string status = reader.GetString(2);
+        Console.WriteLine($"  №{orderId} | {date:yyyy-MM-dd HH:mm} | {status}");
+    }
+
+    if (!found)
+        Console.WriteLine("  Заказов не найдено (или клиент отсутствует).");
+}
+
+// 7
+
+static async Task MainMenuAsync(string connectionString)
+{
+    while (true)
+    {
+        Console.WriteLine();
+        Console.WriteLine("1. Показать все товары");
+        Console.WriteLine("2. Показать только доступные товары");
+        Console.WriteLine("3. Поиск по части названия");
+        Console.WriteLine("4. Показать число клиентов");
+        Console.WriteLine("5. Изменить доступность товара");
+        Console.WriteLine("6. Выход");
+        Console.Write("Выбор: ");
+
+        string? choice = Console.ReadLine();
+
+        try
+        {
+            switch (choice)
+            {
+                case "1":
+                    await ShowProductsAsync(connectionString);
+                    break;
+
+                case "2":
+                    await ShowAvailableProductsAsync(connectionString);
+                    break;
+
+                case "3":
+                    Console.Write("Часть названия: ");
+                    string search = Console.ReadLine() ?? "";
+                    if (string.IsNullOrWhiteSpace(search))
+                    {
+                        Console.WriteLine("Пустой запрос.");
+                        break;
+                    }
+                    await SearchProductsByNameAsync(connectionString, search);
+                    break;
+
+                case "4":
+                    int customers = await GetCustomerCountAsync(connectionString);
+                    Console.WriteLine($"Клиентов в базе: {customers}");
+                    break;
+
+                case "5":
+                    Console.Write("ID товара: ");
+                    if (!int.TryParse(Console.ReadLine(), out int id))
+                    {
+                        Console.WriteLine("Некорректный ID.");
+                        break;
+                    }
+                    Console.Write("Сделать доступным? (y/n): ");
+                    string? ans = Console.ReadLine();
+                    bool isAvailable = ans?.Trim().ToLower() == "y";
+                    await UpdateProductAvailabilityAsync(connectionString, id, isAvailable);
+                    break;
+
+                case "6":
+                    return;
+                case "7":
+                    using (var cts = new CancellationTokenSource())
+                    {
+                        cts.CancelAfter(TimeSpan.FromSeconds(5));
+                        try
+                        {
+                            await ShowProductsAsync(connectionString, cts.Token);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            Console.WriteLine("Операция отменена по таймауту.");
+                        }
+                    }
+                    break;
+
+                case "8":
+                    Console.Write("ID клиента: ");
+                    if (!int.TryParse(Console.ReadLine(), out int customerId))
+                    {
+                        Console.WriteLine("Некорректный ID.");
+                        break;
+                    }
+                    await GetCustomerOrdersAsync(connectionString, customerId);
+                    break;
+
+                default:
+                    Console.WriteLine("Неизвестный пункт меню.");
+                    break;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            Console.WriteLine("Операция отменена.");
+        }
+        catch (SqlException ex)
+        {
+            Console.WriteLine($"Ошибка SQL Server: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Ошибка: {ex.Message}");
+        }
+    }
+}
